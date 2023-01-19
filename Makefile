@@ -1,43 +1,49 @@
-NVCC        = nvcc
-NVCC_FLAGS  = -O3 -I/usr/local/cuda/include 
-LD_FLAGS    = -lcudart -L/usr/local/cuda/lib64
-EXE			= gpu_mining_problem2
-OBJ			= gpu_mining_problem2.o support.o
+in=GRCh38_reduced_rna.fna # starter input file name, can set like "make run_starter in=other.fna"
 
-default: $(EXE)
+all: Exp1 Exp2
+Exp1: make_critical make_atomic make_locks
+Exp2: make_schedule
 
-# ------------------------------------------------------------------------------- #
-
-# input file and size
-FILE     = in_20k.csv
-SIZE	 = 20000
-
-# number of trials to run
-TRIALS_A = 5000000
-TRIALS_B = 10000000
-
-# output file suffix
-OUT_A    = 20k_5m
-OUT_B    = 20k_10m
-
-
-run:
-	clear 
-	make
-	./gpu_mining_problem2 $(FILE) $(SIZE) $(TRIALS_A) _out_$(OUT_A).csv _time_$(OUT_A).csv
-	./gpu_mining_problem2 $(FILE) $(SIZE) $(TRIALS_B) _out_$(OUT_B).csv _time_$(OUT_B).csv
-
-
-# ------------------------------------------------------------------------------- #
-
-gpu_mining_problem2.o: gpu_mining_problem2.cu nonce_kernel.cu hash_kernel.cu reduction_kernel.cu support.h
-	$(NVCC) -c -o $@ gpu_mining_problem2.cu $(NVCC_FLAGS)
-
-support.o: support.cu support.h
-	$(NVCC) -c -o $@ support.cu $(NVCC_FLAGS)
-
-$(EXE): $(OBJ)
-	$(NVCC) $(OBJ) -o $(EXE) $(LD_FLAGS)
+# duplicate this for other files
+make_critical: compute_average_TF_Exp1_critical.c
+	gcc -fopenmp -g -Wall -o compute_average_TF_Exp1_critical compute_average_TF_Exp1_critical.c -lm -std=c99
+make_atomic: compute_average_TF_Exp1_atomic.c
+	gcc -fopenmp -g -Wall -o compute_average_TF_Exp1_atomic compute_average_TF_Exp1_atomic.c -lm -std=c99
+make_locks: compute_average_TF_Exp1_locks.c
+	gcc -fopenmp -g -Wall -o compute_average_TF_Exp1_locks compute_average_TF_Exp1_locks.c -lm -std=c99
+make_schedule: compute_average_TF_Exp2_schedule.c
+	gcc -fopenmp -g -Wall -o compute_average_TF_Exp2_schedule compute_average_TF_Exp2_schedule.c -lm -std=c99
+	
 
 clean:
-	rm -rf *.o $(EXE)
+	$(RM) compute_average_TF_Exp1_critical compute_average_TF_Exp1_atomic compute_average_TF_Exp1_locks compute_average_TF_Exp2_schedule
+
+
+# Below are commands to help you run your program easily.
+# You will need to create more entries for your different files, such as for critical and locks.
+run: run_critical run_atomic run_locks run_schedule
+
+# duplicate this for other files
+run_critical:
+	./compute_average_TF_Exp1_critical $(in) OUTPUT_critical_1th.csv TIME_critical_1th.csv 1
+	./compute_average_TF_Exp1_critical $(in) OUTPUT_critical_2th.csv TIME_critical_2th.csv 2
+	./compute_average_TF_Exp1_critical $(in) OUTPUT_critical_4th.csv TIME_critical_4th.csv 4
+	./compute_average_TF_Exp1_critical $(in) OUTPUT_critical_8th.csv TIME_critical_8th.csv 8
+
+run_atomic:
+	./compute_average_TF_Exp1_atomic $(in) OUTPUT_atomic_1th.csv TIME_atomic_1th.csv 1
+	./compute_average_TF_Exp1_atomic $(in) OUTPUT_atomic_2th.csv TIME_atomic_2th.csv 2
+	./compute_average_TF_Exp1_atomic $(in) OUTPUT_atomic_4th.csv TIME_atomic_4th.csv 4
+	./compute_average_TF_Exp1_atomic $(in) OUTPUT_atomic_8th.csv TIME_atomic_8th.csv 8
+
+run_locks:
+	./compute_average_TF_Exp1_locks $(in) OUTPUT_locks_1th.csv TIME_locks_1th.csv 1
+	./compute_average_TF_Exp1_locks $(in) OUTPUT_locks_2th.csv TIME_locks_2th.csv 2
+	./compute_average_TF_Exp1_locks $(in) OUTPUT_locks_4th.csv TIME_locks_4th.csv 4
+	./compute_average_TF_Exp1_locks $(in) OUTPUT_locks_8th.csv TIME_locks_8th.csv 8
+
+run_schedule:
+	./compute_average_TF_Exp2_schedule $(in) OUTPUT_schedule_1th.csv TIME_schedule_1th.csv 1
+	./compute_average_TF_Exp2_schedule $(in) OUTPUT_schedule_2th.csv TIME_schedule_2th.csv 2
+	./compute_average_TF_Exp2_schedule $(in) OUTPUT_schedule_4th.csv TIME_schedule_4th.csv 4
+	./compute_average_TF_Exp2_schedule $(in) OUTPUT_schedule_8th.csv TIME_schedule_8th.csv 8
