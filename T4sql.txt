@@ -1,0 +1,255 @@
+DROP TABLE IF EXISTS KeepTrackOfCost;
+DROP TABLE IF EXISTS RequireRepairDueTo;
+DROP TABLE IF EXISTS RequestRepair;
+DROP TABLE IF EXISTS Make;
+DROP TABLE IF EXISTS Purchase;
+DROP TABLE IF EXISTS Complaint;
+DROP TABLE IF EXISTS AccountProduct3;
+DROP TABLE IF EXISTS AccountProduct2;
+DROP TABLE IF EXISTS AccountProduct1;
+DROP TABLE IF EXISTS Account;
+DROP TABLE IF EXISTS Customer;
+DROP TABLE IF EXISTS Produce;
+DROP TABLE IF EXISTS Repair;
+DROP TABLE IF EXISTS Checks;
+DROP TABLE IF EXISTS Product3;
+DROP TABLE IF EXISTS Product2;
+DROP TABLE IF EXISTS Product1;
+DROP TABLE IF EXISTS Product;
+DROP TABLE IF EXISTS Worker;
+DROP TABLE IF EXISTS TechnicalStaff;
+DROP TABLE IF EXISTS QualityController;
+DROP TABLE IF EXISTS Employee;
+DROP TABLE IF EXISTS Accident;
+
+
+-- clustered index automatically created on accident_number, implements B+-tree
+CREATE TABLE Accident(
+    accident_number INT PRIMARY KEY,
+    accident_date INT,
+    number_of_work_days_lost INT
+)
+
+-- B+-tree with index on salary
+CREATE TABLE Employee(
+    employee_name VARCHAR(50) PRIMARY KEY NONCLUSTERED,
+    employee_address VARCHAR(100),
+    salary VARCHAR(50)
+)
+CREATE CLUSTERED INDEX salary ON Employee(salary)
+
+-- heap file
+CREATE TABLE QualityController(
+    qc_name VARCHAR(50) PRIMARY KEY NONCLUSTERED,
+    product_type VARCHAR(30),
+    FOREIGN KEY(qc_name) REFERENCES Employee(employee_name),
+)
+
+-- heap file, putting optional params last
+CREATE TABLE TechnicalStaff(
+    ts_name VARCHAR(50) PRIMARY KEY NONCLUSTERED,
+    technical_position VARCHAR(30),
+    education_record_bachelors VARCHAR(50),
+    education_record_masters VARCHAR(50),
+    education_record_phd VARCHAR(50),
+    FOREIGN KEY (ts_name) REFERENCES Employee(employee_name)
+)
+-- allow education_record_masters/phd to be null
+ALTER TABLE TechnicalStaff ALTER COLUMN education_record_masters VARCHAR(50) NULL;
+ALTER TABLE TechnicalStaff ALTER COLUMN education_record_phd VARCHAR(50) NULL;
+
+-- heap file
+CREATE TABLE Worker(
+    worker_name VARCHAR(50) PRIMARY KEY NONCLUSTERED,
+    max_num_product_per_day INT,
+    FOREIGN KEY (worker_name) REFERENCES Employee(employee_name)
+)
+
+-- nonclustered index with included columns
+CREATE TABLE Product(
+    product_ID INT PRIMARY KEY NONCLUSTERED,
+    date_produced INT,
+    time_spent_producing INT,
+    worker_name VARCHAR(50),
+    qc_name VARCHAR(50),
+    ts_name VARCHAR(50),
+    size_of_product VARCHAR(30),
+    FOREIGN KEY (worker_name) REFERENCES Worker(worker_name),
+    FOREIGN KEY (qc_name) REFERENCES QualityController(qc_name),
+)
+-- allow ts_name to be null
+ALTER TABLE Product ALTER COLUMN ts_name VARCHAR(50) NULL;
+-- make worker_name a clustered index
+CREATE NONCLUSTERED INDEX wname ON Product(worker_name) 
+INCLUDE (product_ID, date_produced);
+
+-- heap file
+CREATE TABLE Product1(
+    product_ID INT PRIMARY KEY NONCLUSTERED,
+    name_of_major_software VARCHAR(30),
+    FOREIGN KEY (product_ID) REFERENCES Product(product_ID)
+)
+
+-- binary hash on color_of_product as new computed column with clustered index on the new column
+CREATE TABLE Product2(
+    product_ID INT PRIMARY KEY NONCLUSTERED,
+    color_of_product VARCHAR(30),
+    color_hash AS BINARY_CHECKSUM(color_of_product) ,
+    FOREIGN KEY (product_ID) REFERENCES Product(product_ID)
+)
+CREATE CLUSTERED INDEX color  
+    ON Product2(color_hash)
+-- Alternative way of adding computed column
+-- ALTER TABLE Product2
+-- ADD color AS BINARY_CHECKSUM(color_of_product);
+
+-- heap file
+CREATE TABLE Product3(
+    product_ID INT PRIMARY KEY NONCLUSTERED,
+    weight_of_product VARCHAR(30),
+    FOREIGN KEY (product_ID) REFERENCES Product(product_ID)
+)
+
+-- binary hash on qc_name as new computed column with clustered index on the new column
+CREATE TABLE Checks(
+    qc_name VARCHAR(50),
+    product_ID INT,
+    qc_hash AS BINARY_CHECKSUM(qc_name),
+    PRIMARY KEY NONCLUSTERED (qc_name, product_ID),
+    FOREIGN KEY (qc_name) REFERENCES QualityController(qc_name)
+)
+CREATE CLUSTERED INDEX qc_name 
+    ON Checks(qc_hash)
+
+-- binary hash on product_ID as new computed column with clustered index on the new column
+CREATE TABLE Repair(
+    ts_name VARCHAR(50),
+    product_ID INT,
+    accident_number INT,
+    repair_date INT,
+    prodID_hash AS BINARY_CHECKSUM(product_ID),
+    PRIMARY KEY NONCLUSTERED (ts_name, product_ID, accident_number),
+    FOREIGN KEY (ts_name) REFERENCES TechnicalStaff(ts_name),
+    FOREIGN KEY (product_ID) REFERENCES Product(product_ID),
+)
+CREATE CLUSTERED INDEX product_ID
+    ON Repair(prodID_hash)
+
+-- binary hash on product_ID as new computed column with clustered index on the new column
+CREATE TABLE Produce(
+    worker_name VARCHAR(50),
+    product_ID INT,
+    accident_number INT,
+    prodID_hash AS BINARY_CHECKSUM(product_ID),
+    PRIMARY KEY NONCLUSTERED (worker_name, product_ID, accident_number),
+    FOREIGN KEY (worker_name) REFERENCES Worker(worker_name),
+    FOREIGN KEY (product_ID) REFERENCES Product(product_ID),
+)
+CREATE CLUSTERED INDEX product_ID
+    ON Produce(prodID_hash)
+
+-- clustered index on customer name
+CREATE TABLE Customer(
+    customer_name VARCHAR(50) PRIMARY KEY,
+    customer_address VARCHAR(100)
+)
+
+-- binary hash on account number as new computed column with clustered index on the new column
+CREATE TABLE Account(
+    account_number INT PRIMARY KEY NONCLUSTERED,
+    account_hash AS BINARY_CHECKSUM(account_number),
+    date_established INT,
+    cost REAL
+)
+CREATE CLUSTERED INDEX account_number
+    ON Account(account_hash)
+
+-- -- heap file
+CREATE TABLE AccountProduct1(
+    account_number INT PRIMARY KEY NONCLUSTERED,
+    cost_product1 REAL,
+    FOREIGN KEY (account_number) REFERENCES Account(account_number)
+)
+
+-- heap file
+CREATE TABLE AccountProduct2(
+    account_number INT PRIMARY KEY NONCLUSTERED,
+    cost_product2 REAL,
+    FOREIGN KEY (account_number) REFERENCES Account(account_number)
+)
+
+-- clustered index automatically created on account_number, implements B+-tree
+CREATE TABLE AccountProduct3(
+    account_number INT PRIMARY KEY,
+    cost_product3 REAL,
+    FOREIGN KEY (account_number) REFERENCES Account(account_number)
+)
+
+-- heap file
+CREATE TABLE Complaint(
+    complaint_ID INT PRIMARY KEY NONCLUSTERED,
+    complaint_date INT,
+    complaint_description VARCHAR(2000),
+    treatment_expected VARCHAR(2000)
+)
+
+-- binary hash on product_ID as new computed column with clustered index on the new column
+CREATE TABLE Purchase(
+    customer_name VARCHAR(50),
+    product_ID INT,
+    prodID_hash AS BINARY_CHECKSUM(product_ID),
+    PRIMARY KEY NONCLUSTERED (customer_name, product_ID),
+    FOREIGN KEY (customer_name) REFERENCES Customer(customer_name),
+    FOREIGN KEY (product_ID) REFERENCES Product(product_ID)
+)
+CREATE CLUSTERED INDEX product_ID
+    ON Purchase(prodID_hash)
+
+
+-- B+-tree with index on product_ID
+CREATE TABLE Make(
+    customer_name VARCHAR(50),
+    complaint_ID INT,
+    product_ID INT,
+    PRIMARY KEY NONCLUSTERED (customer_name, complaint_ID, product_ID),
+    FOREIGN KEY (customer_name) REFERENCES Customer(customer_name),
+    FOREIGN KEY (complaint_ID) REFERENCES Complaint(complaint_ID),
+    FOREIGN KEY (product_ID) REFERENCES Product(product_ID)
+)
+CREATE CLUSTERED INDEX prodID ON Make(product_ID)
+
+-- binary hash on qc_name as new computed column with clustered index on the new column
+CREATE TABLE RequestRepair(
+    qc_name VARCHAR(50),
+    product_ID INT,
+    prodID_hash AS BINARY_CHECKSUM(product_ID),
+    PRIMARY KEY NONCLUSTERED (qc_name, product_ID),
+    FOREIGN KEY (qc_name) REFERENCES QualityController(qc_name),
+    FOREIGN KEY (product_ID) REFERENCES Product(product_ID)
+)
+CREATE CLUSTERED INDEX product_ID
+    ON RequestRepair(prodID_hash)
+
+-- B+-tree with index on complaint_ID
+CREATE TABLE RequireRepairDueTo(
+    complaint_ID INT,
+    product_ID INT,
+    PRIMARY KEY NONCLUSTERED (complaint_ID, product_ID),
+    FOREIGN KEY (complaint_ID) REFERENCES Complaint(complaint_ID),
+    FOREIGN KEY (product_ID) REFERENCES Product(product_ID)
+)
+CREATE CLUSTERED INDEX compID ON RequireRepairDueTo(complaint_ID)
+
+
+-- B+-tree with index on product_ID
+CREATE TABLE KeepTrackOfCost(
+    product_ID INT,
+    account_number INT,
+    PRIMARY KEY NONCLUSTERED (product_ID, account_number),
+    FOREIGN KEY (product_ID) REFERENCES Product(product_ID),
+    FOREIGN KEY (account_number) REFERENCES Account(account_number)
+)
+CREATE CLUSTERED INDEX prodID ON KeepTrackOfCost(product_ID)
+
+-- To check indexes on Purchase, uncomment this line
+-- SELECT * FROM sys.indexes WHERE OBJECT_ID=OBJECT_ID('Purchase')

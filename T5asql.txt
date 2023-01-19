@@ -1,0 +1,528 @@
+-- NOTE: ONLY RUN THE STORED PROCEDURE PART IF INSERTING THE SAME DATA IN JAVA APP. 
+-- OTHERWISE THERE WILL BE DUPLICATES THAT CAUSE FAILURES.
+-- Example queries
+-- Query 1
+INSERT INTO Employee
+VALUES ('Jerry Sanders', '36 Macro St, Santa Clara, CA', '907652.67')
+INSERT INTO Worker
+VALUES ('Jerry Sanders', 30)
+INSERT INTO Employee
+VALUES ('Jensen Huang', '63 Moon Way, Santa Clara, CA', '591993.93')
+INSERT INTO QualityController
+VALUES ('Jensen Huang', 'canned goods')
+
+-- Query 2
+INSERT INTO Product
+VALUES (2022, 20200305, 3, 'Jerry Sanders', 'Jensen Huang', ' ', 'small')
+INSERT INTO Product1
+VALUES (2022, 'small')
+INSERT INTO Checks
+VALUES ('Jensen Huang', 2022)
+
+INSERT INTO Produce
+VALUES ('Jerry Sanders', 2022, -1)
+
+-- Query 3
+INSERT INTO Customer
+VALUES ('Amy', '333 North St.')
+INSERT INTO Purchase
+VALUES ('Amy', 2022)
+
+-- Query 4
+INSERT INTO Account
+VALUES (10, 20201212, 94.62)
+
+INSERT INTO KeepTrackOfCost
+VALUES (2022, 10)
+
+INSERT INTO AccountProduct1
+VALUES (10,94.62)
+
+
+-- Query 5
+INSERT INTO Complaint
+VALUES (1, 20221117, 'broken', 'replace')
+
+INSERT INTO Make
+VALUES ('Amy', 1, 2022)
+
+INSERT INTO RequireRepairDueTo
+VALUES (1, 2022)
+
+-- Query 6
+INSERT INTO Accident
+VALUES (0, 20200305, 4)
+
+UPDATE Produce
+SET accident_number = 0
+WHERE worker_name = 'Jerry Sanders' AND product_ID = 2022
+
+-- Query 7
+SELECT date_produced, time_spent_producing FROM Product
+WHERE product_ID = 2022
+
+-- Query 8
+SELECT * FROM Product
+WHERE worker_name = 'Jerry Sanders'
+
+-- Query 9
+SELECT COUNT(*) FROM Checks
+    WHERE qc_name = 'Jensen Huang' AND product_ID IN (SELECT DISTINCT product_ID FROM Make)
+
+-- Query 10
+SELECT SUM(cost_product3) FROM AccountProduct3 as A, KeepTrackOfCost as K
+    WHERE A.account_number = K.account_number AND K.product_ID IN (SELECT product_ID FROM RequestRepair WHERE qc_name = 'Jensen Huang')
+
+-- Query 11
+SELECT * FROM Customer
+    WHERE customer_name IN (SELECT P.customer_name FROM Purchase AS P, Product2 AS D WHERE P.product_ID = D.product_ID AND D.color_of_product = 'red')
+
+-- Query 12
+SELECT * FROM Employee WHERE CAST(salary AS REAL) >= 100000
+
+-- Query 13
+SELECT SUM(A.number_of_work_days_lost) FROM RequireRepairDueTo AS D, Repair AS R, Accident AS A
+    WHERE D.product_ID = R.product_ID AND R.accident_number = A.accident_number
+
+-- Query 14
+SELECT AVG(A.cost) FROM Account AS A, Product AS P, KeepTrackOfCost AS K
+    WHERE P.date_produced > 2020*10000 AND P.date_produced < (2020+1)*10000 AND K.product_ID = P.product_ID AND K.account_number = A.account_number
+
+-- Query 15
+
+ DELETE FROM Accident
+    WHERE accident_date > 20200101 AND accident_date < 20221120
+
+-------------------------------------------------------------------------------------------------------------
+-- Stored Procedures
+
+-- (1) Enter a new employee. Provide employee name, address, salary, employee type (worker/quality controller/technical staff), 
+-- and type specific parameter(s) (worker: maximum number of product per day; quality controller: product type; 
+-- technical staff: technical position, bachelor's degree, master's degree, phd degree [put blank space to that entry if none]).
+-- https://stackoverflow.com/questions/1810638/optional-parameters-in-sql-server-stored-proc
+DROP PROCEDURE IF EXISTS Option1;
+GO
+
+CREATE PROCEDURE Option1 
+    @ename VARCHAR(50),
+    @address VARCHAR(100),
+    @salary VARCHAR(50),
+    @type VARCHAR(30),
+    @param1 VARCHAR(50),
+    @param2a VARCHAR(50) = NULL,
+    @param2b VARCHAR(50) = NULL,
+    @param2c VARCHAR(50) = NULL
+
+AS 
+BEGIN 
+    INSERT INTO Employee
+    VALUES (@ename, @address, @salary)
+    IF @type LIKE 'worker'
+        INSERT INTO Worker
+        VALUES (@ename, (SELECT CAST(@param1 AS INT)));
+    IF @type LIKE 'quality controller'
+        INSERT INTO QualityController
+        VALUES (@ename, @param1)
+    IF @type LIKE 'technical staff'
+        INSERT INTO TechnicalStaff
+        VALUES (@ename, @param1, @param2a, @param2b, @param2c)
+END
+GO
+
+-- EXEC Option1 @ename='Jerry Sanders', @address='36 Macro St, Santa Clara, CA', @salary='907652.67', @type='worker', @param1='30';
+-- EXEC Option1 @ename='Jensen Huang', @address='63 Moon Way, Santa Clara, CA', @salary='591993.93', @type='quality controller', @param1='box';
+
+
+
+-- (2) Enter a new product associated with the person who made the product, repaired the product if it is repaired, or checked the product. 
+-- Provide product ID, date produced (8digits, YMD), time spent producing (in minutes), worker name, quality controller name, and technical staff name (put blank space if not repaired), 
+-- size of product, special attribute (For type 1 product, name of major software; for type 2 product, color of product; for type 3 product, weight of product with unit Eg. 30.1 lbs).
+-- If repaired, also provide repair date.
+
+DROP PROCEDURE IF EXISTS Option2;
+GO
+
+CREATE PROCEDURE Option2
+    @prodID INT,
+    @dateProduced INT,
+    @timeSpent INT,
+    @wname VARCHAR(50),
+    @qcname VARCHAR(50),
+    @tsname VARCHAR(50) = NULL,
+    @sizeOfProduct VARCHAR(30),
+    @productType INT,
+    @spAttr VARCHAR(30),
+    @repairDate INT = 0
+AS 
+BEGIN 
+    IF NOT RTRIM(ISNULL(@tsname, '')) LIKE ''
+        IF (SELECT COUNT(*) FROM TechnicalStaff WHERE ts_name=@tsname)=0
+            RAISERROR ('This Technical Staff does not exist',1,1)
+    INSERT INTO Product
+    VALUES (@prodID, @dateProduced, @timeSpent, @wname, @qcname, @tsname, @sizeOfProduct)
+
+    IF @productType = 1
+        INSERT INTO Product1
+        VALUES (@prodID, @spAttr)
+    IF @productType = 2
+        INSERT INTO Product2
+        VALUES (@prodID, @spAttr)
+    IF @productType = 3
+        INSERT INTO Product3
+        VALUES (@prodID, @spAttr)
+
+    INSERT INTO Checks
+    VALUES (@qcname, @prodID)
+
+    INSERT INTO Produce
+    VALUES (@wname, @prodID, -1)
+
+    IF @tsname != ' '
+        INSERT INTO Repair
+        VALUES (@tsname, @prodID, -1, @repairDate)
+
+        INSERT INTO RequestRepair
+        VALUES (@qcname, @prodID)
+END
+
+-- Executing the procedure Option2
+GO 
+-- EXEC Option2 @prodID=2022, @dateProduced=20200305, @timeSpent=3, @wname='Jerry Sanders', @qcname='Jensen Huang', @sizeOfProduct='small', @productType=2, @spAttr='red'; 
+
+
+
+-- (3) Enter a customer associated with some products. Provide customer name, address and product IDs as strings. Separate the IDs with ",".
+-- https://learn.microsoft.com/en-us/sql/t-sql/functions/string-split-transact-sql?view=sql-server-ver16
+-- https://stackoverflow.com/questions/27982363/insert-partial-values-from-another-table-in-sql-and-others-manually
+DROP PROCEDURE IF EXISTS Option3;
+GO
+
+CREATE PROCEDURE Option3
+    @cname VARCHAR(50),
+    @address VARCHAR(100),
+    @prodIDs VARCHAR(2000)
+AS 
+BEGIN 
+    INSERT INTO Customer
+    VALUES (@cname, @address)
+
+    DECLARE @ids TABLE(
+        idstr VARCHAR(20)
+    ) 
+    INSERT INTO @ids
+    SELECT value 
+    FROM STRING_SPLIT(@prodIDs, ',') 
+
+    INSERT INTO Purchase
+    SELECT @cname,* FROM @ids
+
+END
+
+-- Executing the procedure Option3
+GO 
+-- EXEC Option3 @cname='Amy', @address='1 Adam St.', @prodIDs='2022';
+
+
+-- (4) Create a new account associated with a product. Provide account number, date account established (8-digits, YMD), cost of product, product category (1, 2, or 3) and productID.
+DROP PROCEDURE IF EXISTS Option4;
+GO
+
+CREATE PROCEDURE Option4
+    @anum INT,
+    @date INT,
+    @cost REAL,
+    @productType INT,
+    @prodID INT
+
+AS 
+BEGIN 
+    INSERT INTO Account
+    VALUES (@anum, @date, @cost)
+
+    INSERT INTO KeepTrackOfCost
+    VALUES (@prodID, @anum)
+
+
+    IF @productType = 3
+        INSERT INTO AccountProduct3
+        VALUES (@anum, @cost)
+    IF @productType = 2
+        INSERT INTO AccountProduct2
+        VALUES (@anum, @cost)
+    IF @productType = 1
+        INSERT INTO AccountProduct1
+        VALUES (@anum, @cost)
+END
+
+-- Executing the procedure Option4
+GO 
+-- EXEC
+
+
+-- (5) Enter a complaint associated with a customer and product. Provide customer name, product ID, complaint ID, complaint date, description and treatment expected.
+DROP PROCEDURE IF EXISTS Option5;
+GO
+
+CREATE PROCEDURE Option5
+    @cname VARCHAR(50),
+    @prodID INT,
+    @complaintID INT,
+    @complaintDate INT,
+    @description VARCHAR(2000),
+    @treatmentExpected VARCHAR(2000)
+
+AS 
+BEGIN 
+    INSERT INTO Complaint
+    VALUES (@complaintID, @complaintDate, @description, @treatmentExpected)
+
+    INSERT INTO Make
+    VALUES (@cname, @complaintID, @prodID)
+
+    INSERT INTO RequireRepairDueTo
+    VALUES (@complaintID, @prodID)
+END
+
+-- Executing the procedure Option5
+GO 
+-- EXEC
+
+
+-- (6) Enter an accident associated with an appropriate employee and product. Provide accident number, accident date, number of workdays lost, accident setting (during "repair" or "produce"), employee name, product ID.
+DROP PROCEDURE IF EXISTS Option6;
+GO
+
+CREATE PROCEDURE Option6
+    @anum INT,
+    @adate INT,
+    @numDaysLost INT,
+    @setting VARCHAR(10),
+    @ename VARCHAR(30),
+    @prodID INT
+
+AS 
+BEGIN 
+    INSERT INTO Accident
+    VALUES (@anum, @adate, @numDaysLost)
+
+    IF @setting LIKE 'repair'
+        UPDATE Repair
+        SET accident_number = @anum
+        WHERE ts_name = @ename AND product_ID = @prodID
+
+    IF @setting LIKE 'produce'
+        UPDATE Produce
+        SET accident_number = @anum
+        WHERE worker_name = @ename AND product_ID = @prodID
+
+
+END
+
+-- Executing the procedure Option6
+GO 
+-- EXEC
+
+
+-- (7) Retrieve the date produced and time spent to produce a particular product. Provide product ID.
+DROP PROCEDURE IF EXISTS Option7;
+GO
+
+CREATE PROCEDURE Option7
+    @prodID INT
+
+AS 
+BEGIN 
+    SELECT date_produced, time_spent_producing FROM Product
+    WHERE product_ID = @prodID
+END
+
+-- Executing the procedure Option7
+GO
+-- EXEC Option7 
+
+
+-- (8) Retrieve all products made by a particular worker. Provide worker name.
+DROP PROCEDURE IF EXISTS Option8;
+GO
+
+CREATE PROCEDURE Option8
+    @wname VARCHAR(50)
+AS 
+BEGIN 
+    SELECT * FROM Product
+    WHERE worker_name = @wname
+END
+
+-- Executing the procedure Option8
+GO
+-- EXEC
+
+
+-- (9) Retrieve the total number of errors a particular quality controller made. This is the total number of products certified by this controller and got some complaints. Provide quality controller name.
+DROP PROCEDURE IF EXISTS Option9;
+GO
+
+CREATE PROCEDURE Option9
+    @qcname VARCHAR(50)
+AS 
+BEGIN 
+    SELECT COUNT(*) FROM Checks
+    WHERE qc_name = @qcname AND product_ID IN (SELECT DISTINCT product_ID FROM Make)
+END
+
+-- Executing the procedure Option9
+GO
+-- EXEC
+
+-- (10) Retrieve the total costs of the products in the product3 category which were repaired at the request of a particular quality controller. Provide quality controller name.
+DROP PROCEDURE IF EXISTS Option10;
+GO
+
+CREATE PROCEDURE Option10
+    @qcname VARCHAR(50)
+AS 
+BEGIN 
+    SELECT SUM(cost_product3) FROM AccountProduct3 as A, KeepTrackOfCost as K
+    WHERE A.account_number = K.account_number AND K.product_ID IN (SELECT product_ID FROM RequestRepair WHERE qc_name = @qcname)
+END
+
+-- Executing the procedure Option10
+GO
+-- EXEC
+
+-- (11) Retrieve all customers (in name order) who purchased all products of a particular color. Provide color.
+DROP PROCEDURE IF EXISTS Option11;
+GO
+
+CREATE PROCEDURE Option11
+    @color VARCHAR(30)
+AS 
+BEGIN 
+    SELECT * FROM Customer
+    WHERE customer_name IN (SELECT P.customer_name FROM Purchase AS P, Product2 AS D WHERE P.product_ID = D.product_ID AND D.color_of_product = @color)
+END
+
+-- Executing the procedure Option11
+GO
+-- EXEC
+
+-- (12) Retrieve all employees whose salary is above a particular salary. Provide salary threshold.
+DROP PROCEDURE IF EXISTS Option12;
+GO
+
+CREATE PROCEDURE Option12
+    @salary REAL
+AS 
+BEGIN 
+    SELECT * FROM Employee WHERE CAST(salary AS REAL) >= @salary
+END
+
+-- Executing the procedure Option12
+GO
+-- EXEC
+
+-- (13) Retrieve the total number of workdays lost due to accidents in repairing the products which got complaints.
+DROP PROCEDURE IF EXISTS Option13;
+GO
+
+CREATE PROCEDURE Option13
+AS 
+BEGIN 
+    SELECT SUM(A.number_of_work_days_lost) FROM RequireRepairDueTo AS D, Repair AS R, Accident AS A
+    WHERE D.product_ID = R.product_ID AND R.accident_number = A.accident_number
+END
+
+-- Executing the procedure Option13
+GO
+-- EXEC
+
+-- (14) Retrieve the average cost of all products made in a particular year. Provide year.
+DROP PROCEDURE IF EXISTS Option14;
+GO
+
+CREATE PROCEDURE Option14
+    @year INT
+AS 
+BEGIN 
+    SELECT AVG(A.cost) FROM Account AS A, Product AS P, KeepTrackOfCost AS K
+    WHERE P.date_produced > @year*10000 AND P.date_produced < (@year+1)*10000 AND K.product_ID = P.product_ID AND K.account_number = A.account_number
+END
+
+-- Executing the procedure Option14
+GO
+-- EXEC
+
+-- (15) Delete all accidents whose dates are in some range. Provide date lower threshold and date upper threshold.
+DROP PROCEDURE IF EXISTS Option15;
+GO
+
+CREATE PROCEDURE Option15
+    @ldate INT,
+    @udate INT
+AS 
+BEGIN 
+    DELETE FROM Accident
+    WHERE accident_date > @ldate AND accident_date < @udate
+END
+
+-- Executing the procedure Option15
+GO
+-- EXEC
+
+-- (16) Import: enter new employees from a data file until the file is empty. Provide input file name.
+-- https://stackoverflow.com/questions/5547393/bulk-insert-with-variable-file-name
+-- https://learn.microsoft.com/en-us/sql/relational-databases/import-export/import-bulk-data-by-using-bulk-insert-or-openrowset-bulk-sql-server?view=sql-server-ver16 FORMAT=''CSV'',
+DROP PROCEDURE IF EXISTS Option16;
+GO
+
+CREATE PROCEDURE Option16
+    @path NVARCHAR(50)
+AS 
+BEGIN 
+
+
+    DROP EXTERNAL DATA SOURCE MyAzureBlobStorage7
+    CREATE EXTERNAL DATA SOURCE MyAzureBlobStorage7
+    WITH ( TYPE = BLOB_STORAGE,
+            LOCATION = 'https://cao0016.blob.core.windows.net/myproduct'
+    );
+
+    DECLARE @sql NVARCHAR(max)
+    SET @sql = N'BULK INSERT Employee FROM ''' + @path + 
+       N''' WITH(DATA_SOURCE = ''MyAzureBlobStorage7'',FIRSTROW = 1,FIELDTERMINATOR = '','',ROWTERMINATOR=''\n'',TABLOCK)'
+    
+    EXEC sp_executesql @sql
+END
+
+-- Executing the procedure Option16
+GO
+-- EXEC Option16 @path='in.csv'
+
+-- (17) Export: Retrieve all customers (in name order) who purchased all products of a particular color and output them to a data file instead of screen. Provide color, export file name, server name, username and database.
+DROP PROCEDURE IF EXISTS Option17;
+GO
+
+CREATE PROCEDURE Option17
+    @color VARCHAR(20)
+AS 
+BEGIN 
+    SELECT * FROM Customer WHERE customer_name IN (SELECT P.customer_name FROM Purchase AS P, Product2 AS D WHERE P.product_ID = D.product_ID AND D.color_of_product = @color)
+END
+
+-- Executing the procedure Option17
+GO
+-- EXEC Option17 @color='red';
+
+-- (18) Quit
+DROP PROCEDURE IF EXISTS Option18;
+
+GO
+CREATE PROCEDURE Option18 
+AS 
+BEGIN 
+    RETURN 0
+END
+
+-- Executing the procedure Option18
+GO 
+EXEC Option18; 
